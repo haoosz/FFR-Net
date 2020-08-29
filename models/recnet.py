@@ -208,31 +208,22 @@ class ResidualBlock(nn.Module):
         x = x + res 
         return x 
 
-def cosine_sim(x1, x2, dim=1, eps=1e-8):
-    ip = torch.mm(x1, x2.t())
-    w1 = torch.norm(x1, 2, dim)
-    w2 = torch.norm(x2, 2, dim)
-    return ip / torch.ger(w1,w2).clamp(min=eps)
+def cosine_sim(x1, x2, dim=1): # N, C, H*W / N, H*W, C
+    x1 = F.normalize(x1,dim=2)
+    x2 = F.normalize(x2,dim=2)
+    ip = torch.bmm(x1, x2.permute(0,2,1))
+    return ip
 
 def selfSimilarity(x): # N, C, H, W
     height = x.size(2)
     width = x.size(3)
     x = x.view(x.size(0), x.size(1),-1) # N, C, H*W
-    ss_space = [] 
-    ss_channel = []
-    for i in x:
-        ss_space.append(cosine_sim(i.t(),i.t()))
-        ss_channel.append(cosine_sim(i,i))
-    ss_space = torch.stack(ss_space,0)
+
+    ss_space = cosine_sim(x.permute(0,2,1),x.permute(0,2,1))
+    ss_channel = cosine_sim(x,x)
+
     ss_space = ss_space.view(ss_space.size(0),ss_space.size(1),height,width) # N, H*W, H, W
-    ss_channel = torch.stack(ss_channel,0) # N, C, C
-    # height = x.size(2)
-    # width = x.size(3)
-    # x = x.view(x.size(0), x.size(1),-1) # N, C, H*W
-    # xt = x.permute(0,2,1) # N, H*W, C
-    # ss_space = torch.matmul(xt,x) # N, H*W, H*W
-    # ss_space = ss_space.view(ss_space.size(0),ss_space.size(1),height,width) # N, H*W, H, W
-    # ss_channel = torch.matmul(x,xt) # N, C, C
+    
     return ss_space, ss_channel
 
 # def cosine_sim(x1, x2, dim=1, eps=1e-8):
@@ -257,7 +248,8 @@ class MarginCosineProduct(nn.Module):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, input):
-        cosine = cosine_sim(input, self.weight)
+        # cosine = cosine_sim(input, self.weight)
+        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
         # cosine = F.linear(F.normalize(input), F.normalize(self.weight))
         # --------------------------- convert label to one-hot ---------------------------
         # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507
@@ -285,15 +277,9 @@ class RecNet(nn.Module):
         self.Conv4Space = nn.Sequential(
                 ConvLayer(self.channel + self.shape**2, 256, **conv_args),
                 ResidualBlock(256, 256, **conv_args),
-                ResidualBlock(256, 256, **conv_args),
-                ResidualBlock(256, 256, **conv_args),
                 ConvLayer(256, 128, **conv_args),
                 ResidualBlock(128, 128, **conv_args),
-                ResidualBlock(128, 128, **conv_args),
-                ResidualBlock(128, 128, **conv_args),
                 ConvLayer(128, self.shape**2, **conv_args),
-                ResidualBlock(self.shape**2, self.shape**2, **conv_args),
-                ResidualBlock(self.shape**2, self.shape**2, **conv_args),
                 ResidualBlock(self.shape**2, self.shape**2, **conv_args),
 
                 nn.Sigmoid(),
@@ -315,8 +301,6 @@ class RecNet(nn.Module):
                 )
         self.Conv4Merge = nn.Sequential(
                 ConvLayer(self.channel*2, self.channel, **conv_args),
-                ResidualBlock(self.channel, self.channel, **conv_args),
-                ResidualBlock(self.channel, self.channel, **conv_args),
                 ResidualBlock(self.channel, self.channel, **conv_args),
                 )
         self.pool5_7x7 = nn.AvgPool2d(kernel_size=[7, 7], stride=[1, 1], padding=0)
