@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from __future__ import print_function
 import PIL
+import cv2
 import torch
 import os
 import glob as gb
@@ -8,6 +9,93 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 import random
+import torchvision.transforms.functional as tf
+
+def add_occluder_block(origin_img, occ_img, bsz):
+    origin_img = np.array(origin_img).astype(float)
+    ih, iw = origin_img.shape[:2]
+
+    lx = np.random.randint(0, iw - bsz)
+    ly = np.random.randint(0, ih - bsz)
+    rx = lx + bsz 
+    ry = ly + bsz 
+    lx = max(0, lx)
+    rx = min(iw, rx)
+    ly = max(0, ly)
+    ry = min(ih, ry)
+    full_mask = np.ones((ih, iw, 1), dtype=float)
+    full_mask[ly:ry, lx:rx] = 0
+    origin_img[ly:ry, lx:rx] = 0 
+    return origin_img, full_mask
+
+
+def add_occluder(origin_img, occ_img, occ_type):
+    origin_img = np.array(origin_img).astype(float) 
+    occ_img = np.array(occ_img).astype(float)
+    #  origin_img = np.array(origin_img)
+    #  occ_img = np.array(occ_img)
+    ih, iw = origin_img.shape[:2]
+    #  Locations for 112x96
+    if ih == 112:
+        locations = {
+            'forehead': [[48, 30], [90, 32]], 
+            'lefteye': [[30.3, 51.7], [30, 30]],       
+            'righteye': [[65.5, 51.5], [30, 30]],
+            'eyes': [[48, 51.5], [80, 42]],
+            'mouth_nose': [[48.1, 88.3], [86, 48]],
+            'mouth': [[48.1, 88], [40, 999]],
+            'leftface': [[30, 71], [45, 80]],
+            'rightface': [[70, 71], [45, 80]],
+            }      
+    elif ih == 128:
+    #  Locations for 128x128
+        locations = {
+                'forehead': [[68, 16], [100, 30]], 
+                'lefteye': [[39, 39], [40, 30]],       
+                'righteye': [[92, 39], [40, 30]],
+                'twoeyes': [[65.5, 39], [92, 30]],
+                'mouth': [[64, 90], [70, 50]],
+                'leftface': [[40, 70], [55, 100]],
+                'rightface': [[90, 70], [55, 100]],
+                }
+
+    oh, ow = occ_img.shape[:2]
+    occ_center, max_occ_size = locations[occ_type]
+    lx, ly = (np.array(occ_center) - np.array([ow/2, oh/2])).astype(int)
+    rx, ry = (np.array(occ_center) + np.array([ow/2, oh/2])).astype(int)
+    # Resize occluders
+    if occ_type == 'mouth':
+        ly = int(occ_center[1])
+        ry = oh + ly
+    if occ_type == 'random':
+        lx = np.random.randint(0, iw - ow)
+        ly = np.random.randint(0, ih - oh)
+        rx = lx + ow
+        ry = ly + oh
+    lx = max(0, lx)
+    rx = min(iw, rx)
+    ly = max(0, ly)
+    ry = min(ih, ry)
+    # ---------- Put occlusion --------------
+    mask = np.ones((ry-ly, rx-lx, 1))
+    occ_img = occ_img[0: ry-ly, 0: rx-lx, :3]
+    origin_img[ly:ry, lx:rx] = origin_img[ly:ry, lx:rx] * (1 - mask) + occ_img * mask
+
+    # Seamless Clone
+    #  kernel = np.ones((8, 8), np.uint8)
+    #  smask = cv2.dilate(mask, kernel, iterations=1)
+    #  origin_img = cv2.seamlessClone((occ_img*255).astype(np.uint8), (origin_img*255).astype(np.uint8), 
+            #  (smask*255).astype(np.uint8), ((lx+rx)//2, (ly+ry)//2), cv2.NORMAL_CLONE)
+    #  origin_img = origin_img.astype(float)/255
+
+    # ---------- Generate mask --------------
+    full_mask = np.ones((ih, iw, 1), dtype=float)
+    full_mask[ly:ry, lx:rx] = full_mask[ly:ry, lx:rx] * (1 - mask)
+    # extend mask
+    kernel = np.ones((8, 8), np.uint8)
+    full_mask = 1 - cv2.dilate(1 - full_mask, kernel, iterations=1)
+
+    return origin_img, full_mask[..., np.newaxis]
 
 class VGGFace2Train(Dataset):
     """
@@ -79,17 +167,16 @@ class LFWData(Dataset):
     """
     LFW dataset, used for face verification test.
     """
-    def __init__(self, face_root, ocl_img_dir, ocl_img_list, img_size=(96, 112), transform=None):
+    def __init__(self, face_root, ocl_img_dir, ocl_img_list, test_ocl_num, img_size=(96, 112)):
         self.face_root = face_root
         self.img_size = img_size
         self.face_img_dir = os.path.join(face_root, 'images')
         self.pair_txt = os.path.join(face_root, 'pairs.txt')
         self.ocl_img_dir = ocl_img_dir 
-
+        self.ocl_nums = test_ocl_num
         self.ocl_names = [x.strip().split() for x in open(ocl_img_list).readlines()]
         self.ocl_names = [x for x in self.ocl_names if not 'eyeglasses' in x[0]]
         self.get_pair_info()
-        self.transform = transform
 
     def get_pair_info(self):
         # Read image information
@@ -120,29 +207,46 @@ class LFWData(Dataset):
             img = Image.open(os.path.join(self.face_img_dir, img_name))
             sample['img{}'.format(i+1)] = img
 
-        sample['label_same'] = self.label[idx]
+        sample['label'] = self.label[idx]
 
         # Random select occluders
         occluder = random.choice(self.ocl_names)
         ocl_path = os.path.join(self.ocl_img_dir, occluder[0])
-        ocl_img = Image.open(ocl_path).convert('RGBA')
-        ocl_type = occluder[1] 
-        if ocl_type == 'face':
-            ocl_type = np.random.choice(['leftface', 'rightface'])
-        sample['ocl_img1'] = ocl_img
-        sample['ocl_type1'] = ocl_type
+        ocl_img_1 = Image.open(ocl_path).convert('RGBA')
+        ocl_type_1 = occluder[1] 
+        if ocl_type_1 == 'face':
+            ocl_type_1 = np.random.choice(['leftface', 'rightface'])
+        # sample['ocl_img1'] = ocl_img
+        # sample['ocl_type1'] = ocl_type
 
         occluder = random.choice(self.ocl_names)
         ocl_path = os.path.join(self.ocl_img_dir, occluder[0])
-        ocl_img = Image.open(ocl_path).convert('RGBA')
-        ocl_type = occluder[1] 
-        if ocl_type == 'face':
-            ocl_type = np.random.choice(['leftface', 'rightface'])
-        sample['ocl_img2'] = ocl_img
-        sample['ocl_type2'] = ocl_type
+        ocl_img_2 = Image.open(ocl_path).convert('RGBA')
+        ocl_type_2 = occluder[1] 
+        if ocl_type_2 == 'face':
+            ocl_type_2 = np.random.choice(['leftface', 'rightface'])
+        # sample['ocl_img2'] = ocl_img
+        # sample['ocl_type2'] = ocl_type
 
-        if self.transform:
-            sample = self.transform(sample)
+        face_img1 = np.array(sample['img1'])
+        face_img2 = np.array(sample['img2'])
+        ocl_img1 = np.array(ocl_img_1)
+        ocl_img2 = np.array(ocl_img_2)
+        # add occluders
+        if self.ocl_nums >= 1:
+            face_img1, mask1 = add_occluder(face_img1, ocl_img1, ocl_type_1)
+        if self.ocl_nums >= 2:
+            face_img2, mask2 = add_occluder(face_img2, ocl_img2, ocl_type_2)
+
+        sample['img1'] = Image.fromarray(face_img1.astype(np.uint8))
+        sample['img2'] = Image.fromarray(face_img2.astype(np.uint8))
+
+        # to tensor
+        sample['img1'] = torch.from_numpy(transform_data(sample['img1']).transpose(2,0,1)).float()
+        sample['img2'] = torch.from_numpy(transform_data(sample['img2']).transpose(2,0,1)).float()
+        sample['label'] = torch.tensor(sample['label']).long() 
+        # if self.transform:
+        #     sample = self.transform(sample)
 
         return sample
 
@@ -154,7 +258,7 @@ class CASIA(Dataset):
             `path/to/image label`
         - size: (W, H)
     """
-    def __init__(self, data_root, img_list, ocl_list, pair_same=False, shuffle=False, transform=None, size=(96, 112)):
+    def __init__(self, data_root, img_list, ocl_list, pair_same=False, shuffle=False, size=(96, 112)):
         self.face_img_dir  = os.path.join(data_root, 'images')
         self.ocl_img_dir   = os.path.join(data_root, 'occluder')
         self.face_img_list = img_list
@@ -162,7 +266,6 @@ class CASIA(Dataset):
         self.shuffle       = shuffle
         self.pair_same     = pair_same
         self.size          = size
-        self.transform     = transform
         self.ids           = list(range(10575))
         self.get_img_label()
 
@@ -231,12 +334,42 @@ class CASIA(Dataset):
         if ocl_type == 'face':
             ocl_type = np.random.choice(['leftface', 'rightface'])
 
-        sample['ocl_img'] = ocl_img 
-        sample['ocl_type'] = ocl_type
+        # sample['ocl_img'] = ocl_img 
+        # sample['ocl_type'] = ocl_type
         sample['ocl_label'] = self.occ_label_dic[ocl_type]
+        # flip
+        self.p = 0.5
+        if random.random() < self.p:
+            sample['img1'] = tf.hflip(sample['img1'])
+            sample['img2'] = tf.hflip(sample['img2'])
+        # add occluders
+        self.bocc_sz = 0
+        face_img = np.array(sample['img2'])
+        ocl_img = np.array(ocl_img)
+        # ocl_type = sample['ocl_type']
+        tmp_prob = np.random.random()
+        mask = np.ones((face_img.shape[0], face_img.shape[1], 1), dtype=float)
+        if self.bocc_sz > 0:
+            face_img, mask = add_occluder_block(face_img, ocl_img, self.bocc_sz)
+        else:
+            face_img, mask = add_occluder(face_img, ocl_img, ocl_type)
+        mask_label = 1
 
-        if self.transform:
-            sample = self.transform(sample)
+        sample['img2'] = Image.fromarray(face_img.astype(np.uint8))
+        sample['mask_label'] = mask_label
+        sample['mask'] = mask
+        # to tensor
+        sample['img1'] = torch.from_numpy(transform_data(sample['img1']).transpose(2,0,1)).float()
+        sample['img2'] = torch.from_numpy(transform_data(sample['img2']).transpose(2,0,1)).float()
+        
+        sample['label'] = torch.tensor(sample['label']).long()
+        sample['mask_label'] = torch.tensor(sample['mask_label']).long()
+        sample['ocl_label'] = (torch.tensor(sample['ocl_label']) * sample['mask_label']).float()
+        if 'mask' in sample.keys():
+            sample['mask'] = torch.tensor(sample['mask'].transpose(2, 0, 1)).float()
+
+        # if self.transform:
+        #     sample = self.transform(sample)
         return sample
 
 def get_data(list_dir, ocltype, train = 1):
@@ -401,7 +534,7 @@ def transform_data(img, short=256, crop=224):
 #     return face_feats
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # rename samples (test set)/tight_crop -> samples
     # facepaths = gb.glob('../samples/*/*.jpg')
     # model_eval = initialize_model()
@@ -411,5 +544,3 @@ if __name__ == '__main__':
     # plt.imshow(S)
     # plt.show()
     #generate_pairs()
-    data = VGGFace2Train()
-    print(len(data))
