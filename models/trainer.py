@@ -5,7 +5,7 @@ from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 import os
 import numpy as np
 from collections import OrderedDict
-
+import torch.nn.functional as F
 from pretrain.senet50_256 import senet50_256, Senet50_256
 import sys
 sys.path.append('..')
@@ -28,6 +28,47 @@ def generate_labelMap(label):
     labelMap = -labelMap
     return labelMap
 
+# class AddMarginProduct(nn.Module):
+#     r"""Implement of large margin cosine distance: :
+#     Args:
+#         in_features: size of each input sample
+#         out_features: size of each output sample
+#         s: norm of input feature
+#         m: margin
+#         cos(theta) - m
+#     """
+
+#     def __init__(self, in_features, out_features, s=30.0, m=0.40):
+#         super(AddMarginProduct, self).__init__()
+#         self.in_features = in_features
+#         self.out_features = out_features
+#         self.s = s
+#         self.m = m
+#         self.weight = Parameter(torch.FloatTensor(out_features, in_features))
+#         nn.init.xavier_uniform_(self.weight)
+
+#     def forward(self, input, label):
+#         # --------------------------- cos(theta) & phi(theta) ---------------------------
+#         cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+#         phi = cosine - self.m
+#         # --------------------------- convert label to one-hot ---------------------------
+#         one_hot = torch.zeros(cosine.size(), device='cuda')
+#         # one_hot = one_hot.cuda() if cosine.is_cuda else one_hot
+#         one_hot.scatter_(1, label.view(-1, 1).long(), 1)
+#         # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
+#         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)  # you can use torch.where if your torch.__version__ is 0.4
+#         output *= self.s
+#         # print(output)
+
+#         return output
+
+#     def __repr__(self):
+#         return self.__class__.__name__ + '(' \
+#                + 'in_features=' + str(self.in_features) \
+#                + ', out_features=' + str(self.out_features) \
+#                + ', s=' + str(self.s) \
+#                + ', m=' + str(self.m) + ')'
+
 class CosLoss(nn.Module):
     """Recognition Feature Loss
     """
@@ -37,28 +78,26 @@ class CosLoss(nn.Module):
 
     def forward(self, x_feat, y_feat, z_feat, flag):
         margin = 0.2
-        m = torch.sum(torch.mul(x_feat, y_feat),1)
-        n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(y_feat**2,1)**0.5)
-        loss1 = torch.div(m,n)
+        # m = torch.sum(torch.mul(x_feat, y_feat),1)
+        # n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(y_feat**2,1)**0.5)
+        # loss1 = torch.div(m,n)
 
-        m = torch.sum(torch.mul(x_feat, z_feat),1)
-        n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(z_feat**2,1)**0.5)
-        loss2 = torch.div(m,n)
-        zeros = torch.zeros_like(loss1)
-        loss = torch.where((loss2 - loss1) + margin > 0, (loss2 - loss1) + margin, zeros)
+        # m = torch.sum(torch.mul(x_feat, z_feat),1)
+        # n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(z_feat**2,1)**0.5)
+        # loss2 = torch.div(m,n)
 
-        return torch.mean(loss) 
-        # labelMap = generate_labelMap(label)
-        # scoreMap = cosine_sim(x_feat, y_feat)
-        # mulMap = torch.mul(labelMap, scoreMap)
-        # loss = torch.sum(mulMap)
-        # return loss
+        pos_cos = torch.sum(torch.mul(F.normalize(x_feat),F.normalize(y_feat)),1)
+        neg_cos = torch.sum(torch.mul(F.normalize(x_feat),F.normalize(z_feat)),1)
+
+        return F.relu_type((neg_cos - pos_cos) + margin).mean()
 
 def calculate_loss(cosine, label, s=30.0, m=0.20):
-    one_hot = torch.zeros_like(cosine)
-    one_hot.scatter_(1, label.view(-1, 1), 1.0)
+    one_hot = torch.zeros(cosine.size(), device='cuda')
+    one_hot.scatter_(1, label.view(-1, 1).long(), 1.0)
     # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
-    output = s * (cosine - one_hot * m)
+    phi = cosine - m
+    output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+    output *= s
     return output
 
 def normalization(map):
