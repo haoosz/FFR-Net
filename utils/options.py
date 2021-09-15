@@ -26,8 +26,7 @@ class Options():
         self.parser.add_argument('--inresize', type=int, default=1, help='bicubic resize input or not.')
         self.parser.add_argument('--data_filter', type=str, default='none', help='filter data')
         self.parser.add_argument('--mask_percent', type=int, default=60, help='mask size percentage')
-        self.parser.add_argument('--pair_same', type=int, default=1, help='use the same image in inputs')
-        self.parser.add_argument('--bocc_sz', type=int, default=0, help='block occlusion size')
+        self.parser.add_argument('--neg_num', type=int, default=1, help='number of negative images')
 
         # -----------  Model args ----------------
         self.parser.add_argument('--model_name', type=str, default='', help="name of the model")
@@ -49,15 +48,15 @@ class Options():
         self.parser.add_argument('--Dgroups', type=int, default=1, help='groups of discriminator')
 
         # -----------  Loss args ----------------
-        self.parser.add_argument('--loss_weight', type=float, nargs=6, default=[1e0]*5, 
+        self.parser.add_argument('--loss_weight', type=float, nargs=1, default=[1e0]*5, 
                 help="weight of different losses")
-        self.parser.add_argument('--gan_loss', default='gan', type=str, help='loss type: lsgan/gan/dragan.')
+        # self.parser.add_argument('--gan_loss', default='gan', type=str, help='loss type: lsgan/gan/dragan.')
         self.parser.add_argument('--loss', default='sphere', type=str, help='main loss type')
         self.parser.add_argument('--use_masklabel', default=0, type=int, help='use mask label or not')
 
         # -----------  Optimizer args ----------------
         self.parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer to use')
-        self.parser.add_argument('--lr', type=float, default=1e-1, help='learning rate')
+        self.parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
         self.parser.add_argument('--g_lr', type=float, default=2e-4, help='initial learning rate for generator')
         self.parser.add_argument('--d_lr', type=float, default=2e-4, help='initial learning rate for discriminator')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam')
@@ -71,7 +70,7 @@ class Options():
         self.parser.add_argument('--seed', type=int, default=123, help='Random seed for training')
         self.parser.add_argument('--nThread', type=int, default=8, help='Threads used to load data.')
 
-        self.parser.add_argument('--batch_size', type=int, default=32, help='Train and test batch size')
+        self.parser.add_argument('--batch_size', type=int, default=64, help='Train and test batch size')
         self.parser.add_argument('--total_epochs', type=int, default=10, help='Total train epochs')
 
         self.parser.add_argument('--continue_train', type=int, help='continue training: load the latest model')
@@ -94,6 +93,7 @@ class Options():
             self.opt.gpu_ids = utils.get_gpu_memory_map()[1][:self.opt.gpus]
             if not isinstance(self.opt.gpu_ids, list):
                 self.opt.gpu_ids = [self.opt.gpu_ids]
+            self.opt.gpu_ids = [2,3]
             print('Using GPUs: ', self.opt.gpu_ids)
         else:
             self.opt.gpu_ids = []

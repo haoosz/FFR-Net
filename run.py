@@ -8,15 +8,17 @@ phase   = 'train'
 #  phase   = 'test'
 # ------------------------ data args ---------------------------- 
 # train_data = 'vgg'
-train_data = '../data_occlusion/CASIA-Warp'
+train_data = '/app/CASIA-WebFace_112_align_v1_masked'
 #  train_data = 'CASIA'
-bocc_sz = 0
-pair_same  = 1
 # ------------------------ model args ---------------------------- 
 #  model_name        = 'Ocl_Rec_GAN_resnet50_arcface'
 #  model_name        = 'Ocl_Rec_GAN_resnet50_cosface'
 #  model_name        = 'Ocl_Rec_GAN_sphere64_cosface'
-model_name        = 'Ocl_senet50_Rec_adam_norm_SC_Modified'
+# model_name        = 'senet50_Simplified_arcFace_noSCLoss_Sigmoid'
+# model_name        = 'senet50_Simplified_arcFace_noSCLoss_Softmax'
+# model_name        = 'senet50_Simplified_cosFace_noSCLoss_Sigmoid'
+# model_name        = 'senet50_Simplified_cosFace_SpaceLoss_Softmax'
+model_name        = 'model_without_ss_id'
 #  model_name        = 'Ocl_Rec_GAN_resnet50_arcface-C080V4'
 #  model_name        = 'Ocl_Rec_GAN_resnet50_arcface-C003V8'
 #  model_name        = 'Ocl_Rec_GAN_resnet50_arcface-F000'
@@ -29,15 +31,14 @@ Dgroups           = 1
 #  optimizer         = 'RMSprop'
 #  optimizer         = 'AdaBound'
 optimizer         = 'Adam'
-lr                = 2e-4
+# lr                = 2e-4
 # lr = 0.001
 # optimizer         = 'SGD'
 # lr                = 0.001 
-#  lr = 0.1 
+lr = 1e-2
 beta1             = 0.9
 momentum          = 0.9
 weight_decay      = 0 
-gan_loss          = 'navgan'
 #  loss_weight       = [1, 1]
 #  use_masklabel     = 1
 #  loss_weight       = [1, 0]
@@ -49,17 +50,19 @@ gan_loss          = 'navgan'
 #  loss_weight       = [1, 1000, 1e-6, 1000, 1000] if pair_same else [1, 1000, 10, 1000, 1]
 #  loss_weight       = [1, 1000, 1e-2, 1000, 1000] if pair_same else [1, 1000, 10, 1000, 1]
 #  loss_weight       = [1, 100, 1e-1, 1000, 1000] if pair_same else [1, 1000, 10, 1000, 1]
-loss_weight = [1, 1, 1, 0, 0, 1] # non, cos, ocl, spacess, channelss
+# loss_weight = [1, 1, 1, 1, 1, 1] # non, triplet, ocl, space, channel, cosFace
+loss_weight = [0,1,0,1] # ss, triplet, id, cls
 # ------------- fine tune weight -----------
 #  loss_weight       = [0, 0, 0, 0, 1000] 
 
 # ------------------------ train args ---------------------------- 
-gpus              = 2 if not debug else 1
-batch_size        = 64 if not debug else 32 
+gpus              = 4 if not debug else 1
+batch_size        = 64 if not debug else 32
 total_epochs      = 200 if not debug else 10000 
 #  continue_train    = 1
 continue_train    = 0
 which_file        = 'latest'
+# which_file        = '0032000'
 # which_file = '0236000'
 #  which_file = '0140000'
 #  which_file = './weight/model_Ocl_Rec_GAN_sphere64_arcface-loss_sphere-pretrain_model/latest.pth.gzip'
@@ -98,8 +101,6 @@ param = [
         '--debug {}'.format(debug),
         '--train_data {}'.format(train_data),
         '--batch_size {}'.format(batch_size),
-        '--bocc_sz {}'.format(bocc_sz),
-        '--pair_same {}'.format(pair_same),
         '--total_epochs {}'.format(total_epochs),
         '--model_name {}'.format(model_name),
         '--Gnorm_type {}'.format(Gnorm_type),
@@ -109,8 +110,7 @@ param = [
         '--beta1 {}'.format(beta1),
         '--momentum {}'.format(momentum),
         '--weight_decay {}'.format(weight_decay),
-        '--gan_loss {}'.format(gan_loss),
-        '--loss_weight {} {} {} {} {} {}'.format(*loss_weight),
+        '--loss_weight {} {} {} {}'.format(*loss_weight),
         '--print_freq {}'.format(print_freq),
         '--save_freq {}'.format(save_freq),
         '--visual_freq {}'.format(visual_freq),

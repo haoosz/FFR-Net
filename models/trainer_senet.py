@@ -12,7 +12,7 @@ sys.path.append('..')
 from utils import utils
 from utils.adabound import  AdaBound
 import torchvision as tv
-from models.recnet import RecNet, selfSimilarity, cosine_sim, init_weights
+from models.recnet import selfSimilarity, cosine_sim, init_weights
 
 def print_network(net):
     num_params = 0
@@ -69,11 +69,11 @@ def generate_labelMap(label):
 #                + ', s=' + str(self.s) \
 #                + ', m=' + str(self.m) + ')'
 
-class TripletLoss(nn.Module):
+class CosLoss(nn.Module):
     """Recognition Feature Loss
     """
     def __init__(self):
-        super(TripletLoss, self).__init__()
+        super(CosLoss, self).__init__()
         return
 
     def forward(self, x_feat, y_feat, z_feat):
@@ -126,6 +126,48 @@ class TripletLoss(nn.Module):
 #     output *= s
 #     return output
 
+class AddMarginProduct(nn.Module):
+    r"""Implement of large margin cosine distance: :
+    Args:
+        in_features: size of each input sample
+        out_features: size of each output sample
+        s: norm of input feature
+        m: margin
+        cos(theta) - m
+    """
+
+    def __init__(self, in_features, out_features=10575, s=30.0, m=0.40):
+        super(AddMarginProduct, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.s = s
+        self.m = m
+        self.weight = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, input, label):
+        # --------------------------- cos(theta) & phi(theta) ---------------------------
+        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+        phi = cosine - self.m
+        # --------------------------- convert label to one-hot ---------------------------
+        one_hot = torch.zeros(cosine.size(), device='cuda')
+        # one_hot = one_hot.cuda() if cosine.is_cuda else one_hot
+        one_hot.scatter_(1, label.view(-1, 1).long(), 1)
+        # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)  # you can use torch.where if your torch.__version__ is 0.4
+        output *= self.s
+        # print(output)
+
+        return output, cosine
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(' \
+               + 'in_features=' + str(self.in_features) \
+               + ', out_features=' + str(self.out_features) \
+               + ', s=' + str(self.s) \
+               + ', m=' + str(self.m) + ')'
+
+
 def normalization(map):
         max = np.max(np.max(map,1),1)[:, np.newaxis, np.newaxis]
         min = np.min(np.min(map,1),1)[:, np.newaxis, np.newaxis]
@@ -140,36 +182,29 @@ class Trainer():
         self.relu_type = 'prelu'
         self.lr = self.opts.lr
         self.encoder = ir_se_50_512()
-        self.recnet = RecNet(norm_type=self.norm_type, relu_type=self.relu_type)
+        self.classifier = AddMarginProduct(512)
 
-        for param in self.encoder.parameters():
-            param.requires_grad = False
-
-        init_type = 'kaiming'
-        init_weights(self.recnet, init_type)
         #  cosnet.init_weights(self.net_DF, init_type)
         #  cosnet.init_weights(self.net_DP, init_type)
 
         if self.opts.gpus > 0:
             self.encoder.to(self.opts.device)
+            self.classifier.to(self.opts.device)
             self.forward_encoder = lambda x: nn.parallel.data_parallel(self.encoder, x, self.opts.gpu_ids) 
-            self.recnet.to(self.opts.device)
-            self.forward_recnet = lambda x, label: nn.parallel.data_parallel(self.recnet, (x,label), self.opts.gpu_ids)
+            self.forward_classifier = lambda x: nn.parallel.data_parallel(self.classifier, x, self.opts.gpu_ids) 
 
         if opts.phase.lower() == 'test' or opts.phase == 'val':
             self.encoder.eval()
-            self.recnet.eval()
+            self.classifier.eval()
 
         if self.isTrain:
-            self.encoder.eval()
-            self.recnet.train()
-            # for param in self.recnet.parameters():
-            #     print(param.requires_grad)
+            self.encoder.train()
+            self.classifier.train()
             self.config_optimizer()
 
-            mile_stones = [5000, 10000, 15000]
+            mile_stones = [10, 20, 30, 40, 50]
             #  mile_stones = [50, 100, 150]
-            gamma = 0.5
+            gamma = 1 
             self.sch = optim.lr_scheduler.MultiStepLR(self.optim, mile_stones, gamma=gamma)
 
         self.config_criterion()
@@ -180,29 +215,27 @@ class Trainer():
         if self.isTrain:
             print('--------------------- Network initialized -----------------------')
             print_network(self.encoder)
-            print_network(self.recnet)
             print('-----------------------------------------------------------------')
 
     def clone_model(self):
         net_copy = {
             'Senet': Backbone(num_layers=50, drop_ratio=0.6, mode='ir_se'),
-            'Recnet': RecNet(norm_type=self.norm_type, relu_type=self.relu_type),
+            'Classifier': AddMarginProduct(512),
         }
         net_copy['Senet'].load_state_dict(self.encoder.state_dict())
-        net_copy['Recnet'].load_state_dict(self.recnet.state_dict())
-
-        for param in net_copy['Senet'].parameters():
-            param.requires_grad = False
+        net_copy['Classifier'].load_state_dict(self.classifier.state_dict())
 
         if self.opts.gpus > 0: 
             net_copy['Senet'].to(self.opts.device)
-            net_copy['Recnet'].to(self.opts.device)
+            net_copy['Classifier'].to(self.opts.device)
             
         return net_copy 
 
     def config_optimizer(self):
         optimizer_name = self.opts.optimizer.lower()
-        param = [x for x in self.recnet.parameters() if x.requires_grad]
+        param1 = [x for x in self.encoder.parameters() if x.requires_grad]
+        param2 = [x for x in self.classifier.parameters() if x.requires_grad]
+        param = param1 + param2
 
         if optimizer_name == 'adam':
             self.optim = optim.Adam(param, self.opts.lr, betas=(self.opts.beta1, self.opts.beta2), weight_decay=self.opts.weight_decay)
@@ -221,23 +254,15 @@ class Trainer():
 
     def config_criterion(self):
         self.mse_loss = nn.MSELoss()
-        self.triplet = TripletLoss()
+        self.cos_loss = CosLoss()
         self.cross_entropy = nn.CrossEntropyLoss() 
     def forward(self):
         # Generator forward and label prediction in training stage
         self.feat_map_non, self.feat_extract_non = self.forward_encoder(self.nonocl)
         self.feat_map_ocl, self.feat_extract_ocl = self.forward_encoder(self.ocl)
 
-        # space + channel
-        # self.feat_new_v_non, _, _, self.feat_new_non, _, _, self.M_space_non, self.M_channel_non, self.pred_loss_non, self.pred_label_non = self.forward_recnet(self.feat_map_non, self.gt_label)
-        # self.feat_new_v_ocl, self.feat_space_v, self.feat_channel_v, self.feat_new_ocl, _, _, self.M_space_ocl, self.M_channel_ocl, self.pred_loss_ocl, self.pred_label_ocl = self.forward_recnet(self.feat_map_ocl, self.gt_label)
-
-        self.f_non, self.pred_loss_non, self.pred_label_non, self.M_space_non, self.M_channel_non, self.space_non, self.channel_non = self.forward_recnet(self.feat_map_non, self.gt_label)
-        self.f_ocl, self.pred_loss_ocl, self.pred_label_ocl, self.M_space_ocl, self.M_channel_ocl, self.space_ocl, self.channel_ocl = self.forward_recnet(self.feat_map_ocl, self.gt_label)
-
-        # # space
-        # _, self.feat_new_v_non, _, _, self.feat_new_non, _, self.M_space_non, _, self.pred_loss_non, self.pred_label_non = self.forward_recnet(self.feat_map_non,self.gt_label)
-        # _, self.feat_new_v_ocl, _, _, self.feat_new_ocl, _, self.M_space_ocl, _, self.pred_loss_ocl, self.pred_label_ocl = self.forward_recnet(self.feat_map_ocl,self.gt_label)
+        self.pred_loss_non, self.pred_label_non = self.classifier(self.feat_extract_non,self.gt_label)
+        self.pred_loss_ocl, self.pred_label_ocl = self.classifier(self.feat_extract_ocl,self.gt_label)
 
         # ocl accuracy
         label_prob = self.pred_label_ocl # (cos_theta, phi_theta)
@@ -275,60 +300,28 @@ class Trainer():
     #     return avg_diff.mean()
 
     def backward_g(self):
-        # # self.ss_new_space_non, self.ss_new_channel_non = selfSimilarity(self.feat_new_non)
+        # self.ss_new_space_non, self.ss_new_channel_non = selfSimilarity(self.feat_new_non)
         # self.ss_org_space_non, self.ss_org_channel_non = selfSimilarity(self.feat_map_non)
-        # self.ss_new_space_ocl, self.ss_new_channel_ocl = selfSimilarity(self.feat_new_ocl)
-        # # self.ss_org_space_ocl, self.ss_org_channel_ocl = selfSimilarity(self.feat_map_ocl)
-
-        # self.loss_items = []
-        # #  non-occlusion loss
+        self.loss_items = []
+        # self.loss_items.append(self.mse_loss(self.feat_map_ocl, self.feat_map_non))
+        #  non-occlusion loss
         # self.loss_items.append(self.mse_loss(self.feat_new_non, self.feat_map_non))
-        # #  triplet loss
+        #  triplet loss
         # triplet_loss, self.pos_loss, self.neg_loss = self.cos_loss(self.feat_new_v_ocl, self.feat_extract_non, self.feat_extract_ocl)
         # self.loss_items.append(triplet_loss)
-        # # occlusion loss
+        # occlusion loss
         # self.loss_items.append(self.mse_loss(self.feat_new_ocl, self.feat_map_non))
-        # #  self-similarity loss
-        # self.loss_items.append(self.mse_loss(self.ss_new_space_ocl, self.ss_org_space_non))
-        # self.loss_items.append(self.mse_loss(self.ss_new_channel_ocl, self.ss_org_channel_non))
-        # # self.loss_items.append(self.mse_loss(self.feat_space_v, self.feat_extract_non))
-        # # self.loss_items.append(self.mse_loss(self.feat_channel_v, self.feat_extract_non))
-
-        # #  cosFace loss
-        # # self.loss_items.append(
-        # #     self.cross_entropy(self.pred_loss_non, self.gt_label) / (1e-8 + self.opts.loss_weight[5])  \
-        # #     + self.cross_entropy(self.pred_loss_ocl, self.gt_label) 
-        # #     )
-
-        self.loss_items = []
-        
-        self.ss_space, self.ss_channel = selfSimilarity(self.feat_map_non)
-        self.ss_space_non, _ = selfSimilarity(self.space_non)
-        self.ss_space_ocl, _ = selfSimilarity(self.space_ocl)
-        _, self.ss_channel_non = selfSimilarity(self.channel_non)
-        _, self.ss_channel_ocl = selfSimilarity(self.channel_ocl)
-
-        # self similarity loss
-        ss_space_loss = (self.mse_loss(self.ss_space,self.ss_space_non) + self.mse_loss(self.ss_space,self.ss_space_ocl))/2
-        ss_channel_loss = (self.mse_loss(self.ss_channel,self.ss_channel_non) + self.mse_loss(self.ss_channel,self.ss_channel_ocl))/2
-        self.loss_items.append((ss_space_loss + ss_channel_loss)/2)
-        #  triplet loss
-        triplet_loss, self.pos_loss, self.neg_loss = self.triplet(self.f_ocl, self.feat_extract_non, self.feat_extract_ocl)
-        self.loss_items.append(triplet_loss)
-        # Identity loss
-        self.loss_items.append((self.mse_loss(self.f_non, self.feat_extract_non) + self.mse_loss(self.f_ocl, self.feat_extract_non))/2)
-        # # non-occlusion loss
-        # non_loss_lst = [self.mse_loss(torch.squeeze(feat), self.feat_extract_non) for feat in self.f_lst_non]
-        # self.loss_items.append(sum(non_loss_lst))
-        # # occlusion loss
-        # ocl_loss_lst = [self.mse_loss(torch.squeeze(feat), self.feat_extract_non) for feat in self.f_lst_ocl]
-        # self.loss_items.append(sum(ocl_loss_lst))
-        #  classifier loss
+        #  self-similarity loss
+        # self.loss_items.append(self.mse_loss(self.ss_new_space_non, self.ss_org_space_non))
+        # self.loss_items.append(self.mse_loss(self.ss_new_channel_non, self.ss_org_channel_non))
+        # self.loss_items.append(self.mse_loss(self.feat_space_v, self.feat_extract_non))
+        # self.loss_items.append(self.mse_loss(self.feat_channel_v, self.feat_extract_non))
+        #  cosFace loss
         self.loss_items.append(
-            self.cross_entropy(self.pred_loss_non, self.gt_label) / (1e-8 + self.opts.loss_weight[3])  \
+            self.cross_entropy(self.pred_loss_non, self.gt_label) / (1e-8 + self.opts.loss_weight[0])  \
             + self.cross_entropy(self.pred_loss_ocl, self.gt_label) 
             )
-        
+
         self.loss_items = [l * w for l, w in zip(self.loss_items, self.opts.loss_weight)]
         loss_g = sum(self.loss_items)
         loss_g.backward()
@@ -405,7 +398,8 @@ class Trainer():
                 #  p.requires_grad = False 
         self.optim.zero_grad()
         self.backward_g()
-        clip_grad_value_(self.recnet.parameters(), max_clip_value)
+        clip_grad_value_(self.encoder.parameters(), max_clip_value)
+        clip_grad_value_(self.classifier.parameters(), max_clip_value)
         self.optim.step()
 
         # # ===========================
@@ -425,91 +419,18 @@ class Trainer():
         #     #  self.optim_dp.step()
        
     def get_current_values(self):
-        loss_keys = ['SelfSimilarityLoss', 'TripletLoss', 'IdentityLoss', 'ClassifierLoss']
+        loss_keys = ['CosFaceLoss']
         value_dict = OrderedDict()
         for key, loss in zip(loss_keys, self.loss_items):
             loss_value = loss.item()
+            #  if key == 'CosLoss':
+                #  loss_value = loss.item() + self.loss_r.item()
             value_dict[key] = '{:.4f}'.format(loss_value)
         value_dict['TrainAcc']  = '{:.4f}'.format(self.accuracy)
 
-        new_keys = ['SelfSimilarityLoss', 'TripletLoss', 'IdentityLoss', 'ClassifierLoss', 'TrainAcc']
+        new_keys = ['CosFaceLoss', 'TrainAcc']
         new_value_dict = OrderedDict((k, value_dict[k]) for k in new_keys if k in value_dict.keys())
         return new_value_dict
-
-    def get_current_visuals(self):
-        # label_text = []
-        # for i in range(self.gt_label.shape[0]):
-        #     label_text.append('GT:{:05d}\nPred:{:05d}'.format(
-        #         self.gt_label[i].item(), self.pred_label[i].item()))
-        map_non = utils.tensor_to_numpy(self.M_space_non.view(self.M_space_non.size(0),7,7,7,7))
-        map_ocl = utils.tensor_to_numpy(self.M_space_ocl.view(self.M_space_ocl.size(0),7,7,7,7))
-        self.weightmap_ocl = np.ones([self.M_space_ocl.size(0),67,67])*np.max(map_ocl) # 67=(7+3)*6+7
-        self.weightmap_non = np.ones([self.M_space_non.size(0),67,67])*np.max(map_non) 
-        for i in range(7): # H
-            for j in range(7): # W
-                self.weightmap_non[...,i*10:i*10+7,j*10:j*10+7]=normalization(map_non[...,i,j])
-                self.weightmap_ocl[...,i*10:i*10+7,j*10:j*10+7]=normalization(map_ocl[...,i,j])
-        self.weightmap_ocl = self.weightmap_ocl[:,np.newaxis,:,:]*255
-        self.weightmap_non = self.weightmap_non[:,np.newaxis,:,:]*255
-
-        # channelweight_ocl = normalization(utils.tensor_to_numpy(self.M_channel_ocl))[:,np.newaxis,:,:]*255
-        # channelweight_non = normalization(utils.tensor_to_numpy(self.M_channel_non))[:,np.newaxis,:,:]*255
-
-        # channel_non = torch.argmax(self.M_channel_non,2).unsqueeze(2).unsqueeze(3).repeat(1,1,7,7)
-        # channel_ocl = torch.argmax(self.M_channel_ocl,2).unsqueeze(2).unsqueeze(3).repeat(1,1,7,7)
-
-        # featmap_non_array = utils.tensor_to_numpy(self.feat_map_non)
-        # featmap_ocl_array = utils.tensor_to_numpy(self.feat_map_ocl)
-
-        # non_featmap = utils.tensor_to_numpy(torch.gather(self.feat_map_non, 1, channel_non))
-        # ocl_featmap = utils.tensor_to_numpy(torch.gather(self.feat_map_ocl, 1, channel_ocl))
-
-        # channelmap_non = normalization(np.mean(non_featmap,1))*255
-        # channelmap_ocl = normalization(np.mean(ocl_featmap,1))*255
-
-        # non_featmap = normalization(utils.tensor_to_numpy(torch.mean(self.feat_map_non,1)))*255
-        # ocl_featmap = normalization(utils.tensor_to_numpy(torch.mean(self.feat_map_ocl,1)))*255
-
-        # non_featnew = normalization(utils.tensor_to_numpy(torch.mean(self.feat_new_non,1)))*255
-        # ocl_featnew = normalization(utils.tensor_to_numpy(torch.mean(self.feat_new_ocl,1)))*255
-
-        # channelmap_non = non_featmap[:,np.newaxis,:,:]
-        # channelmap_ocl = ocl_featmap[:,np.newaxis,:,:]
-        # channelnew_non = non_featnew[:,np.newaxis,:,:]
-        # channelnew_ocl = ocl_featnew[:,np.newaxis,:,:]
-
-        # for m in range(channelmap_non.shape[0]):
-        #         non_featmap = np.mean(featmap_non_array[m,channel_non[m,:],:,:],1)
-        #         channelmap_non[m,:,:,:] = normalization(non_featmap) * 255
-        #         ocl_featmap = np.mean(featmap_ocl_array[m,channel_ocl[m,:],:,:],1)
-        #         channelmap_ocl[m,:,:,:] = normalization(ocl_featmap) * 255
-
-        nonocl_image = (utils.tensor_to_numpy(self.nonocl).transpose(0,2,3,1) + 0.5)*255
-        ocl_image = (utils.tensor_to_numpy(self.ocl).transpose(0,2,3,1) + 0.5)*255
-
-        out = []
-        out.append(nonocl_image.transpose(0,3,1,2))
-        out.append(self.weightmap_non)
-        # out.append(channelweight_non)
-        # out.append(channelmap_non)
-        # out.append(channelnew_non)
-
-        out.append(ocl_image.transpose(0,3,1,2))
-        out.append(self.weightmap_ocl)
-        # out.append(channelweight_ocl)
-        # out.append(channelmap_ocl)
-        # out.append(channelnew_ocl)
-
-        for i in range(4):
-            if i==0 or i==2:
-                out[i] = utils.batch_numpy_to_image(out[i])
-            else:
-                out[i] = utils.batch_numpy_to_image(out[i], size=(112, 112))
-
-        #  feature_vis = self.net.get_feature_vis()
-        #  feature_vis = [utils.tensor_to_numpy(x.repeat(1, 3, 1, 1)) for x in feature_vis]
-        #  out += [utils.batch_numpy_to_image(x) for x in feature_vis]
-        return out
 
     def load_model(self, file_name):
         if file_name == 'latest':
@@ -522,13 +443,15 @@ class Trainer():
             file_path = file_name
         weights = utils.load(file_path)
 
-        self.recnet.load_state_dict(weights['RecNet'], strict=False)
+        self.encoder.load_state_dict(weights['Senet'], strict=False)
+        self.classifier.load_state_dict(weights['Classifier'], strict=False)
         # self.optim.load_state_dict(weights['optimizer'])
         self.start_point = {'epoch': weights['epoch'], 'iter': weights['iter']}
 
     def save_model(self, file_name, extra_info=None):
         weight_dict = {
-                'RecNet': self.recnet.state_dict(),
+                'Senet': self.encoder.state_dict(),
+                'Classifier': self.classifier.state_dict(),
                 'optimizer': self.optim.state_dict(),
                 }
         if extra_info is not None:
@@ -539,35 +462,7 @@ class Trainer():
     def get_lr(self):
         return {'LR': '{:.6f}'.format(self.lr)}
 
-    def get_pos(self):
-        return self.pos_loss
-
-    def get_neg(self):
-        return self.neg_loss
-
     def update_learning_rate(self):
         self.sch.step()
         for param_group in self.optim.param_groups:
             self.lr = param_group['lr']
-
-# if __name__ == '__main__':
-#     # from utils.options import Options
-#     # opts = Options()
-#     # opts = opts.parse()
-
-#     # trainer = Trainer(opts)
-#     # in_lr = torch.randn(32, 3, 224, 224).to(opts.device)
-#     # in_hr = torch.randn(32, 3, 224, 224).to(opts.device)
-
-#     # trainer.set_input(in_lr, in_lr)
-#     # trainer.forward()
-#     # trainer.optimizer_parameters()
-#     # trainer.update_learning_rate()
-#     # print(trainer.get_current_values())
-#     # print(trainer.get_lr())
-#     # print([x.shape for x in trainer.get_current_visuals()])
-#     x=torch.rand(16,5)
-#     y=torch.rand(16,5)
-#     label=torch.rand(16)
-#     loss = cosloss=CosLoss(x,y,label)
-#     print(loss)
