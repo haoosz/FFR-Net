@@ -28,47 +28,6 @@ def generate_labelMap(label):
     labelMap = -labelMap
     return labelMap
 
-# class AddMarginProduct(nn.Module):
-#     r"""Implement of large margin cosine distance: :
-#     Args:
-#         in_features: size of each input sample
-#         out_features: size of each output sample
-#         s: norm of input feature
-#         m: margin
-#         cos(theta) - m
-#     """
-
-#     def __init__(self, in_features, out_features, s=30.0, m=0.40):
-#         super(AddMarginProduct, self).__init__()
-#         self.in_features = in_features
-#         self.out_features = out_features
-#         self.s = s
-#         self.m = m
-#         self.weight = Parameter(torch.FloatTensor(out_features, in_features))
-#         nn.init.xavier_uniform_(self.weight)
-
-#     def forward(self, input, label):
-#         # --------------------------- cos(theta) & phi(theta) ---------------------------
-#         cosine = F.linear(F.normalize(input), F.normalize(self.weight))
-#         phi = cosine - self.m
-#         # --------------------------- convert label to one-hot ---------------------------
-#         one_hot = torch.zeros(cosine.size(), device='cuda')
-#         # one_hot = one_hot.cuda() if cosine.is_cuda else one_hot
-#         one_hot.scatter_(1, label.view(-1, 1).long(), 1)
-#         # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
-#         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)  # you can use torch.where if your torch.__version__ is 0.4
-#         output *= self.s
-#         # print(output)
-
-#         return output
-
-#     def __repr__(self):
-#         return self.__class__.__name__ + '(' \
-#                + 'in_features=' + str(self.in_features) \
-#                + ', out_features=' + str(self.out_features) \
-#                + ', s=' + str(self.s) \
-#                + ', m=' + str(self.m) + ')'
-
 class TripletLoss(nn.Module):
     """Recognition Feature Loss
     """
@@ -79,52 +38,10 @@ class TripletLoss(nn.Module):
     def forward(self, x_feat, y_feat, z_feat):
         margin = 0.1
 
-        # m = torch.sum(torch.mul(x_feat, y_feat),1)
-        # n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(y_feat**2,1)**0.5)
-        # loss1 = torch.div(m,n)
-
-        # m = torch.sum(torch.mul(x_feat, z_feat),1)
-        # n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(z_feat**2,1)**0.5)
-        # loss2 = torch.div(m,n)
-        # zeros = torch.zeros_like(loss1)
-        # loss = torch.where((loss2 - loss1) + margin > 0, (loss2 - loss1) + margin, zeros)
-
-        # return torch.mean(loss) 
-
         pos_cos = 1 - torch.sum(torch.mul(F.normalize(x_feat),F.normalize(y_feat)),1) # non
         neg_cos = 1 - torch.sum(torch.mul(F.normalize(x_feat),F.normalize(z_feat)),1) # ocl
         return F.relu((pos_cos - neg_cos) + margin).mean(), pos_cos.mean(), neg_cos.mean()
 
-# class CosLoss_1(nn.Module):
-#     """Recognition Feature Loss
-#     """
-#     def __init__(self):
-#         super(CosLoss_1, self).__init__()
-#         return
-
-#     def forward(self, x_feat, y_feat, z_feat):
-#         margin = 0.2
-
-#         m = torch.sum(torch.mul(x_feat, y_feat),1)
-#         n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(y_feat**2,1)**0.5)
-#         loss1 = torch.div(m,n)
-
-#         m = torch.sum(torch.mul(x_feat, z_feat),1)
-#         n = torch.mul(torch.sum(x_feat**2,1)**0.5,torch.sum(z_feat**2,1)**0.5)
-#         loss2 = torch.div(m,n)
-#         zeros = torch.zeros_like(loss1)
-#         loss = torch.where((loss2 - loss1) + margin > 0, (loss2 - loss1) + margin, zeros)
-
-#         return torch.mean(loss) 
-
-# def calculate_loss(cosine, label, s=30.0, m=0.20):
-#     one_hot = torch.zeros(cosine.size(), device='cuda')
-#     one_hot.scatter_(1, label.view(-1, 1).long(), 1.0)
-#     # -------------torch.where(out_i = {x_i if condition_i else y_i) -------------
-#     phi = cosine - m
-#     output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
-#     output *= s
-#     return output
 
 def normalization(map):
         max = np.max(np.max(map,1),1)[:, np.newaxis, np.newaxis]
@@ -147,8 +64,6 @@ class Trainer():
 
         init_type = 'kaiming'
         init_weights(self.recnet, init_type)
-        #  cosnet.init_weights(self.net_DF, init_type)
-        #  cosnet.init_weights(self.net_DP, init_type)
 
         if self.opts.gpus > 0:
             self.encoder.to(self.opts.device)
@@ -163,12 +78,9 @@ class Trainer():
         if self.isTrain:
             self.encoder.eval()
             self.recnet.train()
-            # for param in self.recnet.parameters():
-            #     print(param.requires_grad)
             self.config_optimizer()
 
             mile_stones = [5000, 10000, 15000]
-            #  mile_stones = [50, 100, 150]
             gamma = 0.5
             self.sch = optim.lr_scheduler.MultiStepLR(self.optim, mile_stones, gamma=gamma)
 
@@ -223,21 +135,14 @@ class Trainer():
         self.mse_loss = nn.MSELoss()
         self.triplet = TripletLoss()
         self.cross_entropy = nn.CrossEntropyLoss() 
+
     def forward(self):
         # Generator forward and label prediction in training stage
         self.feat_map_non, self.feat_extract_non = self.forward_encoder(self.nonocl)
         self.feat_map_ocl, self.feat_extract_ocl = self.forward_encoder(self.ocl)
 
-        # space + channel
-        # self.feat_new_v_non, _, _, self.feat_new_non, _, _, self.M_space_non, self.M_channel_non, self.pred_loss_non, self.pred_label_non = self.forward_recnet(self.feat_map_non, self.gt_label)
-        # self.feat_new_v_ocl, self.feat_space_v, self.feat_channel_v, self.feat_new_ocl, _, _, self.M_space_ocl, self.M_channel_ocl, self.pred_loss_ocl, self.pred_label_ocl = self.forward_recnet(self.feat_map_ocl, self.gt_label)
-
         self.f_non, self.pred_loss_non, self.pred_label_non, self.M_space_non, self.M_channel_non, self.space_non, self.channel_non = self.forward_recnet(self.feat_map_non, self.gt_label)
         self.f_ocl, self.pred_loss_ocl, self.pred_label_ocl, self.M_space_ocl, self.M_channel_ocl, self.space_ocl, self.channel_ocl = self.forward_recnet(self.feat_map_ocl, self.gt_label)
-
-        # # space
-        # _, self.feat_new_v_non, _, _, self.feat_new_non, _, self.M_space_non, _, self.pred_loss_non, self.pred_label_non = self.forward_recnet(self.feat_map_non,self.gt_label)
-        # _, self.feat_new_v_ocl, _, _, self.feat_new_ocl, _, self.M_space_ocl, _, self.pred_loss_ocl, self.pred_label_ocl = self.forward_recnet(self.feat_map_ocl,self.gt_label)
 
         # ocl accuracy
         label_prob = self.pred_label_ocl # (cos_theta, phi_theta)
@@ -246,60 +151,7 @@ class Trainer():
         self.accuracy = correct / pred_label.shape[0]
         self.pred_label = pred_label
 
-        # self.pred_loss_non = calculate_loss(self.pred_label_non, self.gt_label) 
-        # self.pred_loss_ocl = calculate_loss(self.pred_label_ocl, self.gt_label) 
-
-        #  idx = 1
-        #  tv.utils.save_image(self.ocl_input[0], 'ocl_img.jpg', normalize=True)
-        #  tv.utils.save_image(self.org_input[0], 'org_img.jpg', normalize=True)
-                
-        #  ocl_pred = torch.nn.functional.interpolate(self.ocl_pred[5], scale_factor=8, mode='bilinear') 
-        #  org_pred = torch.nn.functional.interpolate(self.org_pred[5], scale_factor=8, mode='bilinear') 
-        #  ocl_feat = ocl_pred[idx].unsqueeze(1)
-        #  org_feat = org_pred[idx].unsqueeze(1)
-        #  tv.utils.save_image(ocl_feat, 'ocl_feat_example1.jpg', normalize=True)
-        #  tv.utils.save_image(org_feat, 'org_feat_example1.jpg', normalize=True)
-        #  exit()
-
-    # def backward_R(self):
-    #     loss_R = self.cross_entropy(self.org_pred[0], self.gt_label) # ???
-    #     self.loss_r = loss_R
-    #     self.loss_rec = self.mse_loss(self.org_pred[3], self.org_input[0])
-    #     loss_R += self.loss_rec
-    #     loss_R.backward(retain_graph=True)
-
-    # def mask_mse(self, x, y, mask):
-    #     b, c, h, w = x.shape
-    #     diff = (x * mask - y * mask)**2
-    #     avg_diff = torch.sum(diff, (1, 2, 3)) / torch.sum(mask, (1, 2, 3)) 
-    #     return avg_diff.mean()
-
-    def backward_g(self):
-        # # self.ss_new_space_non, self.ss_new_channel_non = selfSimilarity(self.feat_new_non)
-        # self.ss_org_space_non, self.ss_org_channel_non = selfSimilarity(self.feat_map_non)
-        # self.ss_new_space_ocl, self.ss_new_channel_ocl = selfSimilarity(self.feat_new_ocl)
-        # # self.ss_org_space_ocl, self.ss_org_channel_ocl = selfSimilarity(self.feat_map_ocl)
-
-        # self.loss_items = []
-        # #  non-occlusion loss
-        # self.loss_items.append(self.mse_loss(self.feat_new_non, self.feat_map_non))
-        # #  triplet loss
-        # triplet_loss, self.pos_loss, self.neg_loss = self.cos_loss(self.feat_new_v_ocl, self.feat_extract_non, self.feat_extract_ocl)
-        # self.loss_items.append(triplet_loss)
-        # # occlusion loss
-        # self.loss_items.append(self.mse_loss(self.feat_new_ocl, self.feat_map_non))
-        # #  self-similarity loss
-        # self.loss_items.append(self.mse_loss(self.ss_new_space_ocl, self.ss_org_space_non))
-        # self.loss_items.append(self.mse_loss(self.ss_new_channel_ocl, self.ss_org_channel_non))
-        # # self.loss_items.append(self.mse_loss(self.feat_space_v, self.feat_extract_non))
-        # # self.loss_items.append(self.mse_loss(self.feat_channel_v, self.feat_extract_non))
-
-        # #  cosFace loss
-        # # self.loss_items.append(
-        # #     self.cross_entropy(self.pred_loss_non, self.gt_label) / (1e-8 + self.opts.loss_weight[5])  \
-        # #     + self.cross_entropy(self.pred_loss_ocl, self.gt_label) 
-        # #     )
-
+    def backward(self):
         self.loss_items = []
         
         self.ss_space, self.ss_channel = selfSimilarity(self.feat_map_non)
@@ -317,12 +169,6 @@ class Trainer():
         self.loss_items.append(triplet_loss)
         # Identity loss
         self.loss_items.append((self.mse_loss(self.f_non, self.feat_extract_non) + self.mse_loss(self.f_ocl, self.feat_extract_non))/2)
-        # # non-occlusion loss
-        # non_loss_lst = [self.mse_loss(torch.squeeze(feat), self.feat_extract_non) for feat in self.f_lst_non]
-        # self.loss_items.append(sum(non_loss_lst))
-        # # occlusion loss
-        # ocl_loss_lst = [self.mse_loss(torch.squeeze(feat), self.feat_extract_non) for feat in self.f_lst_ocl]
-        # self.loss_items.append(sum(ocl_loss_lst))
         #  classifier loss
         self.loss_items.append(
             self.cross_entropy(self.pred_loss_non, self.gt_label) / (1e-8 + self.opts.loss_weight[3])  \
@@ -330,99 +176,15 @@ class Trainer():
             )
         
         self.loss_items = [l * w for l, w in zip(self.loss_items, self.opts.loss_weight)]
-        loss_g = sum(self.loss_items)
-        loss_g.backward()
-
-    # def backward_D(self):
-    #     fake_feat_f = self.ocl_pred[5].detach()
-    #     fake_feat_p = fake_feat_f * (1 - self.ocl_input[1])
-    #     real_feat_f = self.org_pred[5].detach()
-    #     real_feat_p = real_feat_f * (1 - self.ocl_input[1])
-
-    #     # Fake score calculation
-    #     fake_score_f = self.forward_df(fake_feat_f)         
-    #     fake_score_p = self.forward_dp(fake_feat_p)
-    #     # Real score calculation
-    #     real_score_f = self.forward_df(real_feat_f)
-    #     real_score_p = self.forward_dp(real_feat_p)
-
-    #     loss_d_f = 0.5 * (self.adv_crit(fake_score_f, self.fake_label) + \
-    #             self.adv_crit(real_score_f, self.real_label)) + \
-    #             self.dragan_gradient_penalty(real_feat_f, self.forward_df)
-    #             #  self.wgan_gradient_penalty(real_feat_f, fake_feat_f, self.forward_df)
-
-
-    #     loss_d_p = 0.5 * (self.adv_crit(fake_score_p, self.fake_label) + \
-    #             self.adv_crit(real_score_p, self.real_label)) + \
-    #             self.dragan_gradient_penalty(real_feat_p, self.forward_dp)
-    #             #  self.wgan_gradient_penalty(real_feat_p, fake_feat_p, self.forward_dp)
-
-    #     #  loss_d = fake_score_f.mean() - real_score_f.mean() + \
-    #             #  fake_score_p.mean() - real_score_p.mean()
-        
-    #     #  gp = self.wgan_gradient_penalty(real_feat_f, fake_feat_f, self.forward_df) + \
-    #             #  self.wgan_gradient_penalty(real_feat_p, fake_feat_p, self.forward_dp)
-
-    #     #  loss_d = (loss_d_f + loss_d_p) * self.opts.loss_weight[2]
-    #     #  loss_d = (loss_d_f + loss_d_p) 
-    #     loss_d = loss_d_f
-    #     loss_d.backward()
-    #     self.loss_items.append(loss_d)
+        loss = sum(self.loss_items)
+        loss.backward()
 
     def optimizer_parameters(self,cur_iters):
         max_clip_value = 1.0
-        #  clip_value = 1.0
-        # ===========================
-        # Update G
-        # ===========================
-        #  ------ Stage one -----------
-        #  for k, p in self.net.named_parameters():
-            #  if 'feature_ext' in k:
-                #  p.requires_grad = True
-        #  self.optim.zero_grad()
-        #  self.backward_R()
-        #  clip_grad_value_(self.net.parameters(), max_clip_value)
-        #  self.optim.step()
-
-        # def get_max_norm(parameters, norm_type=2):
-        #     total_norm = 0
-        #     for p in parameters:
-        #         param_norm = p.grad.data.norm(norm_type)
-        #         total_norm += param_norm.item() ** norm_type
-        #     total_norm = total_norm ** (1. / norm_type)
-        #     return total_norm
-
-        # def get_max_value(parameters):
-        #     max_value = 0
-        #     for p in filter(lambda p: p.grad is not None, parameters):
-        #         if p.grad.max().item() > max_value:
-        #             max_value = p.grad.max().item()
-        #     return max_value
-
-        # ------ Stage two -----------
-        #  for k, p in self.net.named_parameters():
-            #  if 'feature_ext' in k:
-                #  p.requires_grad = False 
         self.optim.zero_grad()
-        self.backward_g()
+        self.backward()
         clip_grad_value_(self.recnet.parameters(), max_clip_value)
         self.optim.step()
-
-        # # ===========================
-        # # Update D
-        # # ===========================
-        # if self.opts.loss_weight[2]:
-        #     self.optim_df.zero_grad()
-        #     #  self.optim_dp.zero_grad()
-        #     self.backward_D()
-        #     clip_grad_value_(self.net_DF.parameters(), max_clip_value)
-        #     #  clip_grad_value_(self.net_DP.parameters(), max_clip_value)
-        #     #  print('Max gradient value and norm Full D:\t', get_max_norm(self.net_DF.parameters()), get_max_value(self.net_DF.parameters()))
-        #     #  print('Max gradient value and norm Partial D:\t', get_max_norm(self.net_DP.parameters()), get_max_value(self.net_DP.parameters()))
-        #     #  clip_grad_norm_(self.net_DF.parameters(), max_clip_norm_D)
-        #     #  clip_grad_norm_(self.net_DP.parameters(), max_clip_norm_D)
-        #     self.optim_df.step()
-        #     #  self.optim_dp.step()
        
     def get_current_values(self):
         loss_keys = ['SelfSimilarityLoss', 'TripletLoss', 'IdentityLoss', 'ClassifierLoss']
@@ -435,81 +197,6 @@ class Trainer():
         new_keys = ['SelfSimilarityLoss', 'TripletLoss', 'IdentityLoss', 'ClassifierLoss', 'TrainAcc']
         new_value_dict = OrderedDict((k, value_dict[k]) for k in new_keys if k in value_dict.keys())
         return new_value_dict
-
-    def get_current_visuals(self):
-        # label_text = []
-        # for i in range(self.gt_label.shape[0]):
-        #     label_text.append('GT:{:05d}\nPred:{:05d}'.format(
-        #         self.gt_label[i].item(), self.pred_label[i].item()))
-        map_non = utils.tensor_to_numpy(self.M_space_non.view(self.M_space_non.size(0),7,7,7,7))
-        map_ocl = utils.tensor_to_numpy(self.M_space_ocl.view(self.M_space_ocl.size(0),7,7,7,7))
-        self.weightmap_ocl = np.ones([self.M_space_ocl.size(0),67,67])*np.max(map_ocl) # 67=(7+3)*6+7
-        self.weightmap_non = np.ones([self.M_space_non.size(0),67,67])*np.max(map_non) 
-        for i in range(7): # H
-            for j in range(7): # W
-                self.weightmap_non[...,i*10:i*10+7,j*10:j*10+7]=normalization(map_non[...,i,j])
-                self.weightmap_ocl[...,i*10:i*10+7,j*10:j*10+7]=normalization(map_ocl[...,i,j])
-        self.weightmap_ocl = self.weightmap_ocl[:,np.newaxis,:,:]*255
-        self.weightmap_non = self.weightmap_non[:,np.newaxis,:,:]*255
-
-        # channelweight_ocl = normalization(utils.tensor_to_numpy(self.M_channel_ocl))[:,np.newaxis,:,:]*255
-        # channelweight_non = normalization(utils.tensor_to_numpy(self.M_channel_non))[:,np.newaxis,:,:]*255
-
-        # channel_non = torch.argmax(self.M_channel_non,2).unsqueeze(2).unsqueeze(3).repeat(1,1,7,7)
-        # channel_ocl = torch.argmax(self.M_channel_ocl,2).unsqueeze(2).unsqueeze(3).repeat(1,1,7,7)
-
-        # featmap_non_array = utils.tensor_to_numpy(self.feat_map_non)
-        # featmap_ocl_array = utils.tensor_to_numpy(self.feat_map_ocl)
-
-        # non_featmap = utils.tensor_to_numpy(torch.gather(self.feat_map_non, 1, channel_non))
-        # ocl_featmap = utils.tensor_to_numpy(torch.gather(self.feat_map_ocl, 1, channel_ocl))
-
-        # channelmap_non = normalization(np.mean(non_featmap,1))*255
-        # channelmap_ocl = normalization(np.mean(ocl_featmap,1))*255
-
-        # non_featmap = normalization(utils.tensor_to_numpy(torch.mean(self.feat_map_non,1)))*255
-        # ocl_featmap = normalization(utils.tensor_to_numpy(torch.mean(self.feat_map_ocl,1)))*255
-
-        # non_featnew = normalization(utils.tensor_to_numpy(torch.mean(self.feat_new_non,1)))*255
-        # ocl_featnew = normalization(utils.tensor_to_numpy(torch.mean(self.feat_new_ocl,1)))*255
-
-        # channelmap_non = non_featmap[:,np.newaxis,:,:]
-        # channelmap_ocl = ocl_featmap[:,np.newaxis,:,:]
-        # channelnew_non = non_featnew[:,np.newaxis,:,:]
-        # channelnew_ocl = ocl_featnew[:,np.newaxis,:,:]
-
-        # for m in range(channelmap_non.shape[0]):
-        #         non_featmap = np.mean(featmap_non_array[m,channel_non[m,:],:,:],1)
-        #         channelmap_non[m,:,:,:] = normalization(non_featmap) * 255
-        #         ocl_featmap = np.mean(featmap_ocl_array[m,channel_ocl[m,:],:,:],1)
-        #         channelmap_ocl[m,:,:,:] = normalization(ocl_featmap) * 255
-
-        nonocl_image = (utils.tensor_to_numpy(self.nonocl).transpose(0,2,3,1) + 0.5)*255
-        ocl_image = (utils.tensor_to_numpy(self.ocl).transpose(0,2,3,1) + 0.5)*255
-
-        out = []
-        out.append(nonocl_image.transpose(0,3,1,2))
-        out.append(self.weightmap_non)
-        # out.append(channelweight_non)
-        # out.append(channelmap_non)
-        # out.append(channelnew_non)
-
-        out.append(ocl_image.transpose(0,3,1,2))
-        out.append(self.weightmap_ocl)
-        # out.append(channelweight_ocl)
-        # out.append(channelmap_ocl)
-        # out.append(channelnew_ocl)
-
-        for i in range(4):
-            if i==0 or i==2:
-                out[i] = utils.batch_numpy_to_image(out[i])
-            else:
-                out[i] = utils.batch_numpy_to_image(out[i], size=(112, 112))
-
-        #  feature_vis = self.net.get_feature_vis()
-        #  feature_vis = [utils.tensor_to_numpy(x.repeat(1, 3, 1, 1)) for x in feature_vis]
-        #  out += [utils.batch_numpy_to_image(x) for x in feature_vis]
-        return out
 
     def load_model(self, file_name):
         if file_name == 'latest':
@@ -549,25 +236,3 @@ class Trainer():
         self.sch.step()
         for param_group in self.optim.param_groups:
             self.lr = param_group['lr']
-
-# if __name__ == '__main__':
-#     # from utils.options import Options
-#     # opts = Options()
-#     # opts = opts.parse()
-
-#     # trainer = Trainer(opts)
-#     # in_lr = torch.randn(32, 3, 224, 224).to(opts.device)
-#     # in_hr = torch.randn(32, 3, 224, 224).to(opts.device)
-
-#     # trainer.set_input(in_lr, in_lr)
-#     # trainer.forward()
-#     # trainer.optimizer_parameters()
-#     # trainer.update_learning_rate()
-#     # print(trainer.get_current_values())
-#     # print(trainer.get_lr())
-#     # print([x.shape for x in trainer.get_current_visuals()])
-#     x=torch.rand(16,5)
-#     y=torch.rand(16,5)
-#     label=torch.rand(16)
-#     loss = cosloss=CosLoss(x,y,label)
-#     print(loss)

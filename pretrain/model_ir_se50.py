@@ -140,7 +140,7 @@ class Backbone(Module):
         x = self.output_layer(x)
         return y, l2_norm(x) # featmap(N,512,7,7), feat(N,512)
 
-def ir_se_50_512(weights_path='/app/Occluded-Face-RecNet/pretrain/model_ir_se50_new.pth', **kwargs):
+def ir_se_50_512(weights_path='./pretrain/se50.pth', **kwargs):
     """
     load imported model instance
 

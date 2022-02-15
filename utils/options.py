@@ -37,18 +37,8 @@ class Options():
         self.parser.add_argument('--use_catt', type=int, default=0, help='use channel attention or not')
         self.parser.add_argument('--use_ms_pool', type=int, default=1, help='use multiscale weighted pool or not')
 
-
-        # -----------  Generator args ----------------
-        self.parser.add_argument('--Gnorm_type', type=str, default='bn', help="normal type of Generator")
-        self.parser.add_argument('--Grelu_type', type=str, default='prelu', help="relu type of Generator")
-
-        # -----------  Discriminator args ----------------
-        self.parser.add_argument('--Dnorm_type', type=str, default='bn', help="normal type of Discriminator")
-        self.parser.add_argument('--Drelu_type', type=str, default='LeakyReLU', help="relu type of Generator")
-        self.parser.add_argument('--Dgroups', type=int, default=1, help='groups of discriminator')
-
         # -----------  Loss args ----------------
-        self.parser.add_argument('--loss_weight', type=float, nargs=1, default=[1e0]*5, 
+        self.parser.add_argument('--loss_weight', type=float, nargs=4, default=[1e0]*5, 
                 help="weight of different losses")
         # self.parser.add_argument('--gan_loss', default='gan', type=str, help='loss type: lsgan/gan/dragan.')
         self.parser.add_argument('--loss', default='sphere', type=str, help='main loss type')
@@ -76,7 +66,6 @@ class Options():
         self.parser.add_argument('--continue_train', type=int, help='continue training: load the latest model')
         self.parser.add_argument('--epoch_count', type=int, default=0, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
         self.parser.add_argument('--save_freq', type=int, default=2000, help='iterations to save checkpoints')
-        self.parser.add_argument('--visual_freq', type=int, default=100, help='epochs to save checkpoints')
         self.parser.add_argument('--print_freq', type=int, default=10, help='frequency of showing training results on console')
         self.parser.add_argument('--eval_freq', type=int, default=100, help='evaluation frequency')
 
