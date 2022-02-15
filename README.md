@@ -26,3 +26,5 @@ Type the following commands to train the model:
 ```
 python3 run.py
 ```
+## License
+This work is under [MIT License](LICENSE)
