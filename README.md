@@ -1,40 +1,28 @@
 # FFR-Net
 
-The work of "A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification" for the rebuttal of *BMVC 2021*.
+The work of "*A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification*".
 
 ## Introduction
+We introduce a unified framework, named Face Feature Rectification Network (FFR-Net), for masked and mask- free face recognition. Experiments show that our frame- work achieves the best average performance on mixed datasets (mask and mask-free faces) with a single model. Besides, we propose rectification blocks (RecBlocks) to rectify features of masked or mask-free faces in both spatial and channel dimensions. RecBlocks can maximize the consistency between masked faces and their mask-free counterparts in the rectified feature space.
 
-We upload the code and weight files of our model and feel free to try it.
+![overview](./images/overview.png)
 
-### code
-
-``recnet.py``: defination of our proposed model.
-
-``model_ir_se50.py``: defination of our backbone SENet50.
-
-``trainer.py``: defination of our losses and training strategy.
-
-``utils.py``: utils of the training process.
-
-### weight
-
-``FFRNet.pth``: well-trained weight file of our model FFR-Net. 
-
-``se50.pth``: pretrained weight file of our backbone SENet.
-
-Our model is trained on augmented CASIA-WebFace dataset. Note that the pretrained weight of SENet is fixed during the training process.
-
-## Quick Start
-Use the following commands to run our code:
-```
-cd code
-python3 recnet.py
-```
-You can replace the line 305 of ``recnet.py`` with any face image input to get the rectified facial representation for better identification performance.
-```
-input = torch.randn(16, 512, 7, 7)
-```
 ## Environment
 The work is with **Python 3.6** and **PyTorch 1.7**.
 
-Thank you.
+## Pretrained Models
+
+We provied 2 pretrained models:
+
+| models | pretrained file | mask-free | masked |
+| :-----:| :----: | :----: | :----: |
+| SENet50 | [se50.pth](https://drive.google.com/file/d/1qiu_emStHGt_b_ZVeaAKWjYovAR3q1n5/view?usp=sharing) | ✔ | ✔ |
+| FFR-Net | [FFRNet.pth](https://drive.google.com/file/d/1kVlQHCVynkVXW6cWHS1cVS-4D8_dMTwg/view?usp=sharing) | ✔ | ✘ |
+
+Our model is trained on augmented CASIA-WebFace dataset. Note that the pretrained weight of SENet is fixed during the training process.
+
+## Quick start
+Type the following commands to train the model:
+```
+python3 run.py
+```
