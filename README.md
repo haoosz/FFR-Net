@@ -1,6 +1,6 @@
 # FFR-Net
 
-The work of "*A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification*".
+The work of "[*A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification*](https://arxiv.org/pdf/2202.07358.pdf)".
 
 ## Introduction
 We introduce a unified framework, named Face Feature Rectification Network (FFR-Net), for masked and mask- free face recognition. Experiments show that our frame- work achieves the best average performance on mixed datasets (mask and mask-free faces) with a single model. Besides, we propose rectification blocks (RecBlocks) to rectify features of masked or mask-free faces in both spatial and channel dimensions. RecBlocks can maximize the consistency between masked faces and their mask-free counterparts in the rectified feature space.
