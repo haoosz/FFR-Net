@@ -12,7 +12,7 @@ The work is with **Python 3.6** and **PyTorch 1.7**.
 
 ## Pretrained Models
 
-We provied 2 pretrained models:
+We provide 2 pretrained models:
 
 | models | pretrained file | mask-free | masked |
 | :-----:| :----: | :----: | :----: |
