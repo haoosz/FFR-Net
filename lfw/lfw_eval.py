@@ -286,13 +286,3 @@ def get_avg_accuracy(encoder, recnet, data_loader, flag=0, verbose=False):
     avg_acc_new = get_accuracy(result_new)
     return avg_acc_new, avg_acc
 
-if __name__ == '__main__':
-    from models.net_sphere import sphere20a
-    data_root = '/ciufengchen/data_sr/LFW/'
-    weight_path = './pretrain_models/sphere20a_20171020.pth' 
-    model = sphere20a(False, 10574, True)
-    #  weight_path = './weight/model_partial_sphereface-loss_sphere-train/0116000pth.gzip' 
-    #  model = sphere20a(True, 10575, True)
-    model.load_state_dict(utils.load(weight_path))
-    get_avg_accuracy(model, data_root, (20, 30), True)
-
