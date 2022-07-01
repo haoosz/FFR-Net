@@ -27,7 +27,7 @@ We provide masked CASIA-WebFace and masked LFW datasets (already aligned) and co
 
 | CASIA-WebFace dataset | CASIA-WebFace clean list | LFW dataset | LFW pair list |
 | :-----:| :----: | :----: | :----: |
-| [casia_masked.tar.gz]() | [casia_cleanlist.txt](https://drive.google.com/file/d/1hU0-zX8386_trDUChRrx7qZOolQIDedA/view?usp=sharing) | [lfw_masked.tar.gz](https://drive.google.com/file/d/1qpTG6n88Oqe1TyAqpmMApSz2u3G3kFKG/view?usp=sharing) | [lfw_pairs.txt](https://drive.google.com/file/d/1_wJjzfBJ1NjWv4iJtubfb67-xX-kCIZf/view?usp=sharing) |
+| [casia_masked.tar.gz](https://drive.google.com/file/d/1Wv1q_uObl-vl4lxHTTRBqbGYH8mQDRBE/view?usp=sharing) | [casia_cleanlist.txt](https://drive.google.com/file/d/1hU0-zX8386_trDUChRrx7qZOolQIDedA/view?usp=sharing) | [lfw_masked.tar.gz](https://drive.google.com/file/d/1qpTG6n88Oqe1TyAqpmMApSz2u3G3kFKG/view?usp=sharing) | [lfw_pairs.txt](https://drive.google.com/file/d/1_wJjzfBJ1NjWv4iJtubfb67-xX-kCIZf/view?usp=sharing) |
 
 ## Quick start
 Type the following commands to train the model:
