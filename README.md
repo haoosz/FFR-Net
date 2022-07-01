@@ -21,6 +21,14 @@ We provide 2 pretrained models:
 
 Our model is trained on augmented CASIA-WebFace dataset. Note that the pretrained weight of SENet is fixed during the training process.
 
+## Data
+
+We provide masked CASIA-WebFace and masked LFW datasets (already aligned) and corresponding txt files:
+
+| CASIA-WebFace dataset | CASIA-WebFace clean list | LFW dataset | LFW pair list |
+| :-----:| :----: | :----: | :----: |
+| [casia_masked.tar.gz]() | [casia_cleanlist.txt](https://drive.google.com/file/d/1hU0-zX8386_trDUChRrx7qZOolQIDedA/view?usp=sharing) | [lfw_masked.tar.gz](https://drive.google.com/file/d/1qpTG6n88Oqe1TyAqpmMApSz2u3G3kFKG/view?usp=sharing) | [lfw_pairs.txt](https://drive.google.com/file/d/1_wJjzfBJ1NjWv4iJtubfb67-xX-kCIZf/view?usp=sharing) |
+
 ## Quick start
 Type the following commands to train the model:
 ```
