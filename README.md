@@ -39,13 +39,11 @@ This work is under [MIT License](LICENSE).
 
 ## Citation
 If you find this code useful in your research, please consider citing:
-```
-@misc{hao2022unified,
-      title={A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification}, 
-      author={Shaozhe Hao and Chaofeng Chen and Zhenfang Chen and Kwan-Yee K. Wong},
-      year={2022},
-      eprint={2202.07358},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
+```bibtex
+@inproceedings{hao2022unified,
+  title={A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification},
+  author={Hao, Shaozhe and Chen, Chaofeng and Chen, Zhenfang and Wong, Kwan-Yee K},
+  booktitle={2022 IEEE International Conference on Image Processing (ICIP)},
+  year={2022}
 }
 ```
