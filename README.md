@@ -16,8 +16,8 @@ We provide 2 pretrained models:
 
 | models | pretrained file | mask-free | masked |
 | :-----:| :----: | :----: | :----: |
-| SENet50 | [se50.pth](https://drive.google.com/file/d/1qiu_emStHGt_b_ZVeaAKWjYovAR3q1n5/view?usp=sharing) | ✔ | ✘ |
-| FFR-Net | [FFRNet.pth](https://drive.google.com/file/d/1kVlQHCVynkVXW6cWHS1cVS-4D8_dMTwg/view?usp=sharing) | ✔ | ✔ |
+| SENet50 | [se50.pth](https://drive.google.com/file/d/1QBFrUXl9rsf5Y7yxCum6frDVx5hNmwec/view?usp=sharing) | ✔ | ✘ |
+| FFR-Net | [FFRNet.pth](https://drive.google.com/file/d/1bNlF2Ma6VscCwu7V7jpQlU5HciEyoANh/view?usp=sharing) | ✔ | ✔ |
 
 Our model is trained on augmented CASIA-WebFace dataset. Note that the pretrained weight of SENet is fixed during the training process.
 
