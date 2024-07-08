@@ -42,7 +42,7 @@ If you find this code useful in your research, please consider citing:
 ```bibtex
 @inproceedings{hao2022unified,
   title={A Unified Framework for Masked and Mask-Free Face Recognition via Feature Rectification},
-  author={Hao, Shaozhe and Chen, Chaofeng and Chen, Zhenfang and Wong, Kwan-Yee K},
+  author={Hao, Shaozhe and Chen, Chaofeng and Chen, Zhenfang and Wong, Kwan-Yee~K.},
   booktitle={2022 IEEE International Conference on Image Processing (ICIP)},
   year={2022}
 }
